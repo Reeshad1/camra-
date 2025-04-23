@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Camera Stream</title>
+</head>
+<body>
+  <h2>Camera Side</h2>
+  <video id="localVideo" autoplay muted playsinline></video>
+
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
+
+  <script>
+    // Your Firebase config here
+    const firebaseConfig = {
+      apiKey: "YOUR_API_KEY",
+      authDomain: "YOUR_DOMAIN",
+      databaseURL: "YOUR_DB_URL",
+      projectId: "YOUR_PROJECT_ID",
+      storageBucket: "YOUR_BUCKET",
+      messagingSenderId: "YOUR_ID",
+      appId: "YOUR_APP_ID"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+
+    const localVideo = document.getElementById('localVideo');
+    const peer = new RTCPeerConnection();
+    const roomRef = db.ref('room');
+
+    async function startCamera() {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+      stream.getTracks().forEach(track => peer.addTrack(track, stream));
+      localVideo.srcObject = stream;
+    }
+
+    async function createOffer() {
+      const offer = await peer.createOffer();
+      await peer.setLocalDescription(offer);
+      roomRef.set({ offer: offer.toJSON() });
+    }
+
+    peer.onicecandidate = e => {
+      if (e.candidate) {
+        db.ref('room/callerCandidates').push(e.candidate.toJSON());
+      }
+    };
+
+    db.ref('room/answer').on('value', async snapshot => {
+      const data = snapshot.val();
+      if (data && !peer.remoteDescription) {
+        await peer.setRemoteDescription(new RTCSessionDescription(data));
+      }
+    });
+
+    db.ref('room/viewerCandidates').on('child_added', snapshot => {
+      const data = snapshot.val();
+      peer.addIceCandidate(new RTCIceCandidate(data));
+    });
+
+    startCamera().then(createOffer);
+  </script>
+</body>
+</html>
